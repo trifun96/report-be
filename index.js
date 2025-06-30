@@ -5,7 +5,6 @@ const connectDB = require('./db.js');
 const bcrypt = require("bcrypt");
 const cors = require('cors');
 const jwt = require("jsonwebtoken");
-const cookieParser = require('cookie-parser');
 
 const app = express();
 const PORT = process.env.PORT || 5000
@@ -28,7 +27,6 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
-app.use(cookieParser());
 
 connectDB();
 
@@ -68,7 +66,6 @@ app.post("/api/register", async (req, res) => {
     return res.status(500).json({ error: "Interna greška servera" });
   }
 });
-
 app.post("/api/login", async (req, res) => {
   const { email, lozinka } = req.body;
 
@@ -87,22 +84,16 @@ app.post("/api/login", async (req, res) => {
       return res.status(401).json({ error: "Pogrešna lozinka" });
     }
 
+    // Kreiraj JWT token (važi 1h)
     const token = jwt.sign(
       { id: user._id, email: user.email },
       JWT_SECRET,
       { expiresIn: "30d" }
     );
 
-    // Postavljanje tokena u HTTP-only cookie
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-    });
-
     return res.status(200).json({
       message: "Uspešna prijava",
+      token,
       user: {
         id: user._id,
         name: user.name,
@@ -113,17 +104,6 @@ app.post("/api/login", async (req, res) => {
     console.error("Greška pri loginu:", err);
     res.status(500).json({ error: "Greška na serveru" });
   }
-});
-
-app.post("/api/logout", (req, res) => {
-  res.clearCookie("token", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    path: "/",
-  });
-
-  return res.status(200).json({ message: "Uspešno ste se odjavili" });
 });
 
 
