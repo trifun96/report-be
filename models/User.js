@@ -6,7 +6,9 @@ const userSchema = new mongoose.Schema({
   lozinka: String,
   delatnost: String,
   adresa: String,
-  isActive: { type: Boolean, default: true },
+  isActive: { type: Boolean, default: false },
+  activationToken: String,
+  activationTokenExpires: Date,
   role: {
     type: String,
     enum: ["user", "admin"],
