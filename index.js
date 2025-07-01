@@ -7,7 +7,8 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const crypto = require("crypto");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -35,59 +36,55 @@ app.use(cookieParser());
 
 connectDB();
 
-app.post("/api/register", async (req, res) => {
+const registerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Previše pokušaja registracije, pokušajte kasnije.",
+});
+
+app.post("/api/register", registerLimiter, async (req, res) => {
   const { name, email, lozinka, delatnost, adresa } = req.body;
 
+  // Provera da li su sva polja popunjena
   if (!name || !email || !lozinka || !delatnost || !adresa) {
     return res.status(400).json({ error: "Sva polja su obavezna" });
   }
 
   try {
+    // Provera da li korisnik već postoji
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(409).json({ error: "Korisnik već postoji" });
     }
 
+    // Hash lozinke
     const hashedPassword = await bcrypt.hash(lozinka, 10);
 
-    // 🔐 Kreiranje aktivacionog tokena
+    // Kreiranje aktivacionog tokena
     const activationToken = crypto.randomBytes(32).toString("hex");
-    const activationTokenExpires = Date.now() + 24 * 60 * 60 * 1000; // 24h
+    const activationTokenExpires = Date.now() + 24 * 60 * 60 * 1000; // 24h od sada
 
+    // Kreiranje novog korisnika (neaktivan)
     const newUser = new User({
       name,
       email,
       lozinka: hashedPassword,
       delatnost,
       adresa,
-      isActive: false, // korisnik nije aktivan dok ne klikne link
+      isActive: false,
       activationToken,
       activationTokenExpires,
     });
 
     await newUser.save();
 
-    // 📧 Slanje aktivacionog emaila
-    const transporterOptions = {
-      service: "gmail",
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_PASS,
-      },
-    };
-
-    if (process.env.NODE_ENV === "development") {
-      transporterOptions.tls = {
-        rejectUnauthorized: false,
-      };
-    }
-
-    const transporter = nodemailer.createTransport(transporterOptions);
+    const resend = new Resend(process.env.RESEND_API_KEY);
 
     const activationLink = `https://docora.rs/api/activate/${activationToken}`;
 
-    await transporter.sendMail({
-      from: `"Docora" <${process.env.GMAIL_USER}>`,
+    // Slanje mejla
+    await resend.emails.send({
+    from: "Docora <noreply@docora.rs>",
       to: email,
       subject: "Aktivacija naloga",
       html: `
@@ -98,6 +95,7 @@ app.post("/api/register", async (req, res) => {
       `,
     });
 
+    // Vraćanje uspeha
     return res.status(201).json({
       message: "Registracija uspešna! Proverite email za aktivaciju.",
     });
