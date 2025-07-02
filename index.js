@@ -155,6 +155,79 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
+app.post("/api/forgot-password", async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: "Email je obavezan." });
+  }
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ error: "Korisnik ne postoji." });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const resetTokenExpires = Date.now() + 3600000; // 1h
+
+    user.resetToken = resetToken;
+    user.resetTokenExpires = resetTokenExpires;
+    await user.save();
+
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const resetLink = `https://docora.rs/reset-password/${resetToken}`;
+
+    await resend.emails.send({
+      from: "Docora <noreply@docora.rs>",
+      to: email,
+      subject: "Resetovanje lozinke",
+      html: `
+        <p>Zahtevali ste promenu lozinke.</p>
+        <p>Kliknite na link ispod da postavite novu lozinku:</p>
+        <a href="${resetLink}">${resetLink}</a>
+        <p>Link važi 1 sat.</p>
+      `,
+    });
+
+    return res.status(200).json({ message: "Link za reset lozinke je poslat na email." });
+  } catch (err) {
+    console.error("Greška:", err);
+    return res.status(500).json({ error: "Greška na serveru" });
+  }
+});
+
+
+app.post("/api/reset-password/:token", async (req, res) => {
+  const { token } = req.params;
+  const { lozinka } = req.body;
+
+  if (!lozinka) {
+    return res.status(400).json({ error: "Nova lozinka je obavezna." });
+  }
+
+  try {
+    const user = await User.findOne({
+      resetToken: token,
+      resetTokenExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ error: "Token je nevažeći ili je istekao." });
+    }
+
+    user.lozinka = await bcrypt.hash(lozinka, 10);
+    user.resetToken = undefined;
+    user.resetTokenExpires = undefined;
+    await user.save();
+
+    return res.status(200).json({ message: "Lozinka je uspešno resetovana." });
+  } catch (err) {
+    console.error("Greška:", err);
+    return res.status(500).json({ error: "Greška na serveru" });
+  }
+});
+
 app.post("/api/logout", (req, res) => {
   res.clearCookie("token", {
     httpOnly: true,
