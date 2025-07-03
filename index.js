@@ -4,11 +4,18 @@ const express = require("express");
 const connectDB = require("./db.js");
 const bcrypt = require("bcrypt");
 const cors = require("cors");
+const nodemailer = require("nodemailer");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const crypto = require("crypto");
 const { Resend } = require("resend");
+const OpenAI = require("openai");
 const rateLimit = require('express-rate-limit');
+const multer = require("multer");
+
+const openai = new OpenAI({
+  apiKey: process.env.REACT_APP_OPENAI_API_KEY,
+});
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -41,6 +48,8 @@ const registerLimiter = rateLimit({
   max: 10,
   message: "Previše pokušaja registracije, pokušajte kasnije.",
 });
+
+const upload = multer();
 
 app.post("/api/register", registerLimiter, async (req, res) => {
   const { name, email, lozinka, delatnost, adresa } = req.body;
@@ -237,6 +246,71 @@ app.post("/api/logout", (req, res) => {
   });
 
   return res.status(200).json({ message: "Uspešno ste se odjavili" });
+});
+
+app.post(
+  "/api/send-report",
+  upload.single("pdf"),
+  async (req, res) => {
+    const { email } = req.body;
+    const pdfBuffer = req.file?.buffer;
+
+    if (!email || !pdfBuffer) {
+      return res.status(400).send("Nedostaju podaci");
+    }
+
+    try {
+      const transporter = nodemailer.createTransport({
+        service: "Gmail",
+        auth: {
+          user: process.env.GMAIL_USER,
+          pass: process.env.GMAIL_PASS,
+        },
+        tls: { rejectUnauthorized: false },
+      });
+
+      await transporter.sendMail({
+        from: `"Alta Medica" <${process.env.GMAIL_USER}>`,
+        to: email,
+        subject: "Medicinski izveštaj",
+        text: "U prilogu je Vaš medicinski izveštaj.",
+        attachments: [{ filename: "izvestaj.pdf", content: pdfBuffer }],
+      });
+
+      res.send("Mejl uspešno poslat");
+    } catch (error) {
+      console.error("Greška pri slanju mejla:", error);
+      res.status(500).send("Greška pri slanju mejla");
+    }
+  }
+);
+
+app.post("/api/generate-report", async (req, res) => {
+  try {
+    const prompt = req.body.prompt;
+    if (!prompt || prompt.trim().length < 10) {
+      return res.status(400).json({ error: "Prompt nije validan ili je prekratak." });
+    }
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        { role: "system", content: "Ti si lekar koji piše medicinski izveštaj na osnovu diktata." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.2,
+    });
+
+    const report = completion.choices[0].message.content;
+    res.json({ report });
+  } catch (error) {
+    console.error("Greška u /api/generate-report:", error);
+    if (error.response) {
+      console.error("OpenAI API status:", error.response.status);
+      console.error("OpenAI API data:", error.response.data);
+    }
+    res.status(500).json({ error: "Greška pri generisanju izveštaja." });
+  }
 });
 
 app.get("/api", (req, res) => {
