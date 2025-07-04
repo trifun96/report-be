@@ -248,42 +248,44 @@ app.post("/api/logout", (req, res) => {
   return res.status(200).json({ message: "Uspešno ste se odjavili" });
 });
 
-app.post(
-  "/api/send-report",
-  upload.single("pdf"),
-  async (req, res) => {
-    const { email } = req.body;
-    const pdfBuffer = req.file?.buffer;
+app.post("/api/send-report", upload.single("pdf"), async (req, res) => {
+  const { email } = req.body;
+  const pdfBuffer = req.file?.buffer;
 
-    if (!email || !pdfBuffer) {
-      return res.status(400).send("Nedostaju podaci");
-    }
-
-    try {
-      const transporter = nodemailer.createTransport({
-        service: "Gmail",
-        auth: {
-          user: process.env.GMAIL_USER,
-          pass: process.env.GMAIL_PASS,
-        },
-        tls: { rejectUnauthorized: false },
-      });
-
-      await transporter.sendMail({
-        from: `"Alta Medica" <${process.env.GMAIL_USER}>`,
-        to: email,
-        subject: "Medicinski izveštaj",
-        text: "U prilogu je Vaš medicinski izveštaj.",
-        attachments: [{ filename: "izvestaj.pdf", content: pdfBuffer }],
-      });
-
-      res.send("Mejl uspešno poslat");
-    } catch (error) {
-      console.error("Greška pri slanju mejla:", error);
-      res.status(500).send("Greška pri slanju mejla");
-    }
+  if (!email || !pdfBuffer) {
+    return res.status(400).send("Nedostaju podaci");
   }
-);
+
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
+    // Konvertovanje PDF u Base64 string
+    const base64PDF = pdfBuffer.toString("base64");
+
+    await resend.emails.send({
+      from: "Docora <noreply@docora.rs>",
+      to: email,
+      subject: "Medicinski izveštaj",
+      html: `
+        <p>Poštovani,</p>
+        <p>U prilogu se nalazi Vaš medicinski izveštaj.</p>
+        <p>Srdačno,<br/>Docora tim</p>
+      `,
+      attachments: [
+        {
+          filename: "izvestaj.pdf",
+          content: base64PDF,
+          type: "application/pdf",
+        },
+      ],
+    });
+
+    return res.send("Mejl uspešno poslat");
+  } catch (error) {
+    console.error("Greška pri slanju mejla (Resend):", error);
+    return res.status(500).send("Greška pri slanju mejla");
+  }
+});
 
 app.post("/api/generate-report", async (req, res) => {
   try {
