@@ -364,6 +364,38 @@ app.get("/api/activate/:token", async (req, res) => {
   }
 });
 
+app.post("/api/contact", async (req, res) => {
+  const { name, email, message } = req.body;
+
+  if (!name || !email || !message) {
+    return res.status(400).json({ error: "Sva polja su obavezna." });
+  }
+
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
+await resend.emails.send({
+  from: "Docora <noreply@docora.rs>",
+  to: "samsungtrifke@gmail.com",
+  replyTo: email,
+  subject: `Nova poruka sa kontakt forme`,
+  html: `
+    <h3>Nova poruka</h3>
+    <p><strong>Ime:</strong> ${name}</p>
+    <p><strong>Email:</strong> ${email}</p>
+    <p><strong>Poruka:</strong></p>
+    <p>${message.replace(/\n/g, "<br>")}</p>
+  `,
+});
+
+    return res.status(200).json({ message: "Poruka uspešno poslata." });
+  } catch (error) {
+    console.error("Greška pri slanju kontakt poruke:", error);
+    return res.status(500).json({ error: "Greška pri slanju poruke." });
+  }
+});
+
+
 app.listen(PORT, () => {
   console.log(`🚀 Server je pokrenut na portu ${PORT}`);
 });
