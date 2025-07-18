@@ -142,7 +142,6 @@ app.post("/api/login", async (req, res) => {
       expiresIn: "30d",
     });
 
-    // Postavljanje tokena u HTTP-only cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -153,9 +152,9 @@ app.post("/api/login", async (req, res) => {
     return res.status(200).json({
       message: "Uspešna prijava",
       user: {
-        id: user._id,
         name: user.name,
         email: user.email,
+        delatnost:user.delatnost
       },
     });
   } catch (err) {
@@ -286,9 +285,51 @@ app.post("/api/send-report", upload.single("pdf"), async (req, res) => {
     return res.status(500).send("Greška pri slanju mejla");
   }
 });
-
 app.post("/api/generate-report", async (req, res) => {
   try {
+    const token = req.cookies.token;
+    if (!token) return res.status(401).json({ error: "Niste prijavljeni." });
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await User.findById(decoded.id);
+
+    const isUnlimitedUser = user.email === "samsungtrifke@gmail.com";
+
+    if (!isUnlimitedUser) {
+      if (user.subscriptionExpires && user.subscriptionExpires < new Date()) {
+        user.isSubscribed = false;
+        await user.save();
+      }
+
+      if (!user.isSubscribed) {
+        if (user.reportCredits <= 0) {
+          return res.status(403).json({
+            error: "Iskoristili ste sve besplatne izveštaje.",
+            upgrade: true,
+          });
+        }
+
+        user.reportCredits -= 1;
+
+        if (user.reportCredits === 0) {
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          await resend.emails.send({
+            from: "Docora <noreply@docora.rs>",
+            to: user.email,
+            subject: "Iskoristili ste sve besplatne izveštaje",
+            html: `
+              <p>Poštovani,</p>
+              <p>Iskoristili ste sve besplatne izveštaje.</p>
+              <p>Da biste nastavili sa korišćenjem aplikacije, izaberite jedan od planova:</p>
+              <a href="https://docora.rs/subscribe">Pogledaj pretplate</a>
+            `,
+          });
+        }
+
+        await user.save();
+      }
+    }
+
     const prompt = req.body.prompt;
     if (!prompt || prompt.trim().length < 10) {
       return res.status(400).json({ error: "Prompt nije validan ili je prekratak." });
@@ -307,13 +348,10 @@ app.post("/api/generate-report", async (req, res) => {
     res.json({ report });
   } catch (error) {
     console.error("Greška u /api/generate-report:", error);
-    if (error.response) {
-      console.error("OpenAI API status:", error.response.status);
-      console.error("OpenAI API data:", error.response.data);
-    }
     res.status(500).json({ error: "Greška pri generisanju izveštaja." });
   }
 });
+
 
 app.get("/api", (req, res) => {
   res.json({ message: "Hello from backend!" });

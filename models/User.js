@@ -16,6 +16,17 @@ const userSchema = new mongoose.Schema({
     enum: ["user", "admin"],
     default: "user",
   },
+  reportCredits: {
+    type: Number,
+    default: 2,
+  },
+  isSubscribed: {
+    type: Boolean,
+    default: false,
+  },
+  subscriptionExpires: {
+    type: Date,
+  },
 });
 
 module.exports = mongoose.model("User", userSchema);
