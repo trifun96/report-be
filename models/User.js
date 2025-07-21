@@ -27,6 +27,10 @@ const userSchema = new mongoose.Schema({
   subscriptionExpires: {
     type: Date,
   },
+  image: {
+  type: String,
+  default: "",
+},
 });
 
 module.exports = mongoose.model("User", userSchema);

@@ -12,6 +12,7 @@ const { Resend } = require("resend");
 const OpenAI = require("openai");
 const rateLimit = require('express-rate-limit');
 const multer = require("multer");
+const authMiddleware = require("./middlewares/authMiddleware.js");
 
 const openai = new OpenAI({
   apiKey: process.env.REACT_APP_OPENAI_API_KEY,
@@ -38,7 +39,8 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(cookieParser());
 
 connectDB();
@@ -154,13 +156,41 @@ app.post("/api/login", async (req, res) => {
       user: {
         name: user.name,
         email: user.email,
-        delatnost:user.delatnost
+        delatnost:user.delatnost,
+        reportCredits:user.reportCredits,
+        subscription:user.subscription
       },
     });
   } catch (err) {
     console.error("Greška pri loginu:", err);
     res.status(500).json({ error: "Greška na serveru" });
   }
+});
+
+app.post("/api/upload-profile-image", authMiddleware, async (req, res) => {
+  const { image } = req.body;
+
+  if (!image) return res.status(400).json({ error: "Slika je obavezna." });
+
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: "Korisnik nije pronađen." });
+
+    user.image = image;
+    await user.save();
+
+    res.json({ message: "Slika uspešno sačuvana.", image: user.image });
+  } catch (err) {
+    console.error("Greška pri čuvanju slike:", err);
+    res.status(500).json({ error: "Greška na serveru." });
+  }
+});
+
+
+app.get("/api/user-profile", authMiddleware, async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) return res.status(404).json({ error: "Korisnik nije pronađen" });
+  res.json(user);
 });
 
 app.post("/api/forgot-password", async (req, res) => {
