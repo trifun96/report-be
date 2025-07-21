@@ -4,15 +4,13 @@ const express = require("express");
 const connectDB = require("./db.js");
 const bcrypt = require("bcrypt");
 const cors = require("cors");
-const nodemailer = require("nodemailer");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const crypto = require("crypto");
 const { Resend } = require("resend");
 const OpenAI = require("openai");
-const rateLimit = require('express-rate-limit');
+const rateLimit = require("express-rate-limit");
 const multer = require("multer");
-const authMiddleware = require("./middlewares/authMiddleware.js");
 
 const openai = new OpenAI({
   apiKey: process.env.REACT_APP_OPENAI_API_KEY,
@@ -55,27 +53,20 @@ const upload = multer();
 
 app.post("/api/register", registerLimiter, async (req, res) => {
   const { name, email, lozinka, delatnost, adresa } = req.body;
-
-  // Provera da li su sva polja popunjena
   if (!name || !email || !lozinka || !delatnost || !adresa) {
     return res.status(400).json({ error: "Sva polja su obavezna" });
   }
 
   try {
-    // Provera da li korisnik već postoji
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(409).json({ error: "Korisnik već postoji" });
     }
-
-    // Hash lozinke
     const hashedPassword = await bcrypt.hash(lozinka, 10);
 
-    // Kreiranje aktivacionog tokena
     const activationToken = crypto.randomBytes(32).toString("hex");
     const activationTokenExpires = Date.now() + 24 * 60 * 60 * 1000; // 24h od sada
 
-    // Kreiranje novog korisnika (neaktivan)
     const newUser = new User({
       name,
       email,
@@ -95,7 +86,7 @@ app.post("/api/register", registerLimiter, async (req, res) => {
 
     // Slanje mejla
     await resend.emails.send({
-    from: "Docora <noreply@docora.rs>",
+      from: "Docora <noreply@docora.rs>",
       to: email,
       subject: "Aktivacija naloga",
       html: `
@@ -105,8 +96,6 @@ app.post("/api/register", registerLimiter, async (req, res) => {
         <p>Link važi 24h.</p>
       `,
     });
-
-    // Vraćanje uspeha
     return res.status(201).json({
       message: "Registracija uspešna! Proverite email za aktivaciju.",
     });
@@ -156,41 +145,15 @@ app.post("/api/login", async (req, res) => {
       user: {
         name: user.name,
         email: user.email,
-        delatnost:user.delatnost,
-        reportCredits:user.reportCredits,
-        subscription:user.subscription
+        delatnost: user.delatnost,
+        reportCredits: user.reportCredits,
+        subscription: user.subscription,
       },
     });
   } catch (err) {
     console.error("Greška pri loginu:", err);
     res.status(500).json({ error: "Greška na serveru" });
   }
-});
-
-app.post("/api/upload-profile-image", authMiddleware, async (req, res) => {
-  const { image } = req.body;
-
-  if (!image) return res.status(400).json({ error: "Slika je obavezna." });
-
-  try {
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ error: "Korisnik nije pronađen." });
-
-    user.image = image;
-    await user.save();
-
-    res.json({ message: "Slika uspešno sačuvana.", image: user.image });
-  } catch (err) {
-    console.error("Greška pri čuvanju slike:", err);
-    res.status(500).json({ error: "Greška na serveru." });
-  }
-});
-
-
-app.get("/api/user-profile", authMiddleware, async (req, res) => {
-  const user = await User.findById(req.user.id);
-  if (!user) return res.status(404).json({ error: "Korisnik nije pronađen" });
-  res.json(user);
 });
 
 app.post("/api/forgot-password", async (req, res) => {
@@ -228,13 +191,14 @@ app.post("/api/forgot-password", async (req, res) => {
       `,
     });
 
-    return res.status(200).json({ message: "Link za reset lozinke je poslat na email." });
+    return res
+      .status(200)
+      .json({ message: "Link za reset lozinke je poslat na email." });
   } catch (err) {
     console.error("Greška:", err);
     return res.status(500).json({ error: "Greška na serveru" });
   }
 });
-
 
 app.post("/api/reset-password/:token", async (req, res) => {
   const { token } = req.params;
@@ -251,7 +215,9 @@ app.post("/api/reset-password/:token", async (req, res) => {
     });
 
     if (!user) {
-      return res.status(400).json({ error: "Token je nevažeći ili je istekao." });
+      return res
+        .status(400)
+        .json({ error: "Token je nevažeći ili je istekao." });
     }
 
     user.lozinka = await bcrypt.hash(lozinka, 10);
@@ -287,8 +253,7 @@ app.post("/api/send-report", upload.single("pdf"), async (req, res) => {
 
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
-
-    // Konvertovanje PDF u Base64 string
+    ng;
     const base64PDF = pdfBuffer.toString("base64");
 
     await resend.emails.send({
@@ -362,13 +327,19 @@ app.post("/api/generate-report", async (req, res) => {
 
     const prompt = req.body.prompt;
     if (!prompt || prompt.trim().length < 10) {
-      return res.status(400).json({ error: "Prompt nije validan ili je prekratak." });
+      return res
+        .status(400)
+        .json({ error: "Prompt nije validan ili je prekratak." });
     }
 
     const completion = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
-        { role: "system", content: "Ti si lekar koji piše medicinski izveštaj na osnovu diktata." },
+        {
+          role: "system",
+          content:
+            "Ti si lekar koji piše medicinski izveštaj na osnovu diktata.",
+        },
         { role: "user", content: prompt },
       ],
       temperature: 0.2,
@@ -381,7 +352,6 @@ app.post("/api/generate-report", async (req, res) => {
     res.status(500).json({ error: "Greška pri generisanju izveštaja." });
   }
 });
-
 
 app.get("/api", (req, res) => {
   res.json({ message: "Hello from backend!" });
@@ -442,19 +412,19 @@ app.post("/api/contact", async (req, res) => {
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
 
-await resend.emails.send({
-  from: "Docora <noreply@docora.rs>",
-  to: "samsungtrifke@gmail.com",
-  replyTo: email,
-  subject: `Nova poruka sa kontakt forme`,
-  html: `
+    await resend.emails.send({
+      from: "Docora <noreply@docora.rs>",
+      to: "samsungtrifke@gmail.com",
+      replyTo: email,
+      subject: `Nova poruka sa kontakt forme`,
+      html: `
     <h3>Nova poruka</h3>
     <p><strong>Ime:</strong> ${name}</p>
     <p><strong>Email:</strong> ${email}</p>
     <p><strong>Poruka:</strong></p>
     <p>${message.replace(/\n/g, "<br>")}</p>
   `,
-});
+    });
 
     return res.status(200).json({ message: "Poruka uspešno poslata." });
   } catch (error) {
@@ -462,7 +432,6 @@ await resend.emails.send({
     return res.status(500).json({ error: "Greška pri slanju poruke." });
   }
 });
-
 
 app.listen(PORT, () => {
   console.log(`🚀 Server je pokrenut na portu ${PORT}`);
